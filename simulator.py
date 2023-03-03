@@ -2,6 +2,7 @@ from typing import List, Tuple
 from game_data import *
 from player import *
 import numpy as np
+from time import time
 
 
 class Simulator:
@@ -57,10 +58,19 @@ class Simulator:
         obs = Observation(ObservationType.MOVE, move, self.cur_turn, player_against)
         self.send_observation(obs)
 
+        # Players who assassinate pay 3 coins up front
+        if move == Move.ASSASSINATE:
+            if cur_player.coins < 3:
+                self.kill_player(cur_player)
+                if self.verbosity > 0:
+                    print(f'Player of type {type(cur_player)} tried to assassinate with under 3 coins.')
+                return
+            cur_player.coins -= 3
+
         # Other players can respond to the move
         success = True
-        legal_responses = self.get_legal_responses(move)
         for player in self.players[self.cur_turn+1:] + self.players[:self.cur_turn]:
+            legal_responses = self.get_legal_responses(player_against == player.idx, move)
             if len(legal_responses) == 1:
                 break
             if not self.is_alive(player):
@@ -116,13 +126,8 @@ class Simulator:
         other_player = self.players[op_idx]
 
         if move == Move.ASSASSINATE:
-            if cur_player.coins < 3:
-                self.kill_player(cur_player)
-                if self.verbosity > 0:
-                    print(f'Player of type {type(cur_player)} tried to assassinate with under 3 coins.')
-            else:
+            if self.is_alive(other_player):
                 self.lose_role(other_player)
-                cur_player.coins -= 3
         elif move == Move.COUP:
             if cur_player.coins < 7:
                 self.kill_player(cur_player)
@@ -137,7 +142,7 @@ class Simulator:
                 if self.verbosity > 0:
                     print(f'Player of type {type(cur_player)} tried to steal from someone with no coins.')
             else:
-                stolen_coins = max(2, other_player.coins)
+                stolen_coins = min(2, other_player.coins)
                 cur_player.coins += stolen_coins
                 other_player.coins -= stolen_coins
 
@@ -227,9 +232,9 @@ class Simulator:
 
         return legal_moves
 
-    def get_legal_responses(self, move: Move):
+    def get_legal_responses(self, attacked: bool, move: Move):
         legal_responses = [Response.NOTHING]
-        if move in BLOCKABLE_MOVES:
+        if move in BLOCKABLE_MOVES_ALL or (attacked and move in BLOCKABLE_MOVES):
             legal_responses.append(Response.BLOCK)
         if move in BS_ABLE_MOVES:
             legal_responses.append(Response.CALL_BS)
@@ -247,5 +252,5 @@ class Simulator:
         print(f'Middle: {", ".join([role.name for role in self.middle_cards])}')
 
 if __name__ == '__main__':
-    sim = Simulator([RandomPlayer]*3, verbosity=3)
+    sim = Simulator([RandomPlayer] * 3, verbosity=3)
     sim.run_game()

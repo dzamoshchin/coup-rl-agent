@@ -69,7 +69,8 @@ class Observation:
         return f'Observation: {ObservationType(self.obs_type).name}, {obs}, Player {self.player} to {self.player_against}'
 
 
-BLOCKABLE_MOVES = (Move.ASSASSINATE, Move.STEAL, Move.FOREIGN_AID)
+BLOCKABLE_MOVES_ALL = (Move.FOREIGN_AID,) # Anyone can block Foreign Aid
+BLOCKABLE_MOVES = (Move.ASSASSINATE, Move.STEAL)
 BS_ABLE_MOVES = (Move.SWAP_CARDS, Move.ASSASSINATE, Move.STEAL, Move.TAX)
 
 
