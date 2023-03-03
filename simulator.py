@@ -45,8 +45,7 @@ class Simulator:
     def take_turn(self):
         # Print game state (optional)
         if self.verbosity > 2:
-            for i, player in enumerate(self.players):
-                print(f'Player {i}: {player.coins} coins and roles {", ".join([role.name for role in player.roles])}')
+            self.print_game_state()
         # Player makes a move
         cur_player = self.players[self.cur_turn]
         legal_moves = self.get_legal_moves(cur_player)
@@ -242,6 +241,10 @@ class Simulator:
         if self.verbosity > 1:
             print(obs)
 
+    def print_game_state(self):
+        for i, player in enumerate(self.players):
+            print(f'Player {i}: {player.coins} coins and roles {", ".join([role.name for role in player.roles])}')
+        print(f'Middle: {", ".join([role.name for role in self.middle_cards])}')
 
 if __name__ == '__main__':
     sim = Simulator([RandomPlayer]*3, verbosity=3)
