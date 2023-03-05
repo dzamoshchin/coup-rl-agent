@@ -38,6 +38,8 @@ class Simulator:
         while True:
             self.take_turn()
             if self.is_winner():
+                if self.verbosity > 2:
+                    print(f"Player {self.cur_turn} wins")
                 break
 
     def is_winner(self):
@@ -221,7 +223,7 @@ class Simulator:
         if player.coins >= 10:
             return [(Move.COUP, player_against) for player_against in alive_indices]
 
-        legal_moves = [(move, player_against) for move in [Move.INCOME, Move.FOREIGN_AID, Move.SWAP_CARDS, Move.TAX] for player_against in alive_indices]
+        legal_moves = [(move, cp_idx) for move in [Move.INCOME, Move.FOREIGN_AID, Move.SWAP_CARDS, Move.TAX]]
         if player.coins >= 3:
             legal_moves += [(Move.ASSASSINATE, player_against) for player_against in alive_indices]
         if player.coins >= 7:
@@ -249,7 +251,7 @@ class Simulator:
     def print_game_state(self):
         for i, player in enumerate(self.players):
             print(f'Player {i}: {player.coins} coins and roles {", ".join([role.name for role in player.roles])}')
-        print(f'Middle: {", ".join([role.name for role in self.middle_cards])}')
+        print(f'Deck: {", ".join([role.name for role in self.middle_cards])}\n')
 
 if __name__ == '__main__':
     sim = Simulator([RandomPlayer] * 3, verbosity=3)
