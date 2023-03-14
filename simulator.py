@@ -1,9 +1,10 @@
 from typing import List, Tuple
 from game_data import *
 from player import *
+from mcts import *
 import numpy as np
 from time import time
-
+# from tqdm import trange
 
 class Simulator:
     def __init__(self,
@@ -11,7 +12,7 @@ class Simulator:
                  roles: List[Role] = None,
                  coins: int = 2,
                  roles_per_player: int = 2,
-                 verbosity: int = 0):
+                 verbosity: int = 0,):
 
         self.verbosity = verbosity
         self.cur_turn = 0
@@ -32,7 +33,8 @@ class Simulator:
         self.players: List[Player] = []
         for idx, player_type in enumerate(players):
             player_roles = [self.middle_cards.pop(0) for _ in range(roles_per_player)]
-            self.players.append(player_type(coins, player_roles, len(players), idx))
+            player_type.assign(coins, player_roles, len(players), idx)
+            self.players.append(player_type)
 
     def run_game(self):
         while True:
@@ -40,7 +42,7 @@ class Simulator:
             if self.is_winner():
                 if self.verbosity > 2:
                     print(f"Player {self.cur_turn} wins")
-                break
+                return self.cur_turn
 
     def is_winner(self):
         return self.alive_players.count(True) == 1
@@ -52,7 +54,7 @@ class Simulator:
         # Player makes a move
         cur_player = self.players[self.cur_turn]
         legal_moves = self.get_legal_moves(cur_player)
-        move, player_against = cur_player.move(legal_moves)
+        move, player_against = cur_player.move(legal_moves, self.players)
         if (move, player_against) not in legal_moves:
             raise ValueError(f"Player of type {type(cur_player)} made illegal move {move} against {player_against}")
 
@@ -254,5 +256,18 @@ class Simulator:
         print(f'Deck: {", ".join([role.name for role in self.middle_cards])}\n')
 
 if __name__ == '__main__':
-    sim = Simulator([RandomPlayer] * 3, verbosity=3)
-    sim.run_game()
+    Q = defaultdict(lambda: defaultdict(int)) # action value estimates
+    N = defaultdict(lambda: defaultdict(int)) # action value estimates
+
+    winners = [0, 0, 0, 0]
+    for i in range(1000):
+        # sim = Simulator([RandomPlayer(), RandomPlayer(), HeuristicPlayer(), MCTSPlayer(Q, N, c=5.0, depth=10, num_simulations=20)], verbosity=0)
+        sim = Simulator([RandomPlayer(), RandomPlayer(), RandomPlayer(), MCTSPlayer(Q, N, c=5.0, depth=10, num_simulations=20)], verbosity=0)
+        winner = sim.run_game()
+        winners[winner] += 1
+    print(winners)
+    print((winners[3] / np.sum(winners)) * 100)
+    
+    # sim = Simulator([RandomPlayer(), RandomPlayer(), MCTSPlayer(Q, c=5.0, d=10, M=20)], verbosity=0)
+    # winner = sim.run_game()
+    # print(winner)
