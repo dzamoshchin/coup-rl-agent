@@ -5,12 +5,10 @@ import numpy as np
 
 class Player:
 
-    def __init__(self):
-        pass
-
-    def assign(self, coins: int, roles: List[Role], num_players: int, idx: int):
+    def __init__(self, coins: int, roles: List[Role], num_players: int, idx: int, *kwargs):
         self.coins = coins
         self.roles = roles
+        self.num_players = num_players
         self.idx = idx
 
     def move(self, legal_moves: List[Tuple[Move, int]], player_states: List[type]) -> Tuple[Move, int]:
@@ -27,11 +25,14 @@ class Player:
 
     def flip_role(self) -> int:
         pass
+    
+    def game_over(self, won) -> None:
+        pass
 
 
 class RandomPlayer(Player):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, coins: int, roles: List[Role], num_players: int, idx: int):
+        super().__init__(coins, roles, num_players, idx)
     
     def assign(self, coins: int, roles: List[Role], num_players: int, idx: int):
         super().assign(coins, roles, num_players, idx)
@@ -53,8 +54,8 @@ class RandomPlayer(Player):
         return np.random.choice([i for i in range(len(self.roles)) if self.roles[i] != Role.NONE])
     
 class HeuristicPlayer(Player):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, coins: int, roles: List[Role], num_players: int, idx: int):
+        super().__init__(coins, roles, num_players, idx)
     
     def assign(self, coins: int, roles: List[Role], num_players: int, idx: int):
         super().assign(coins, roles, num_players, idx)

@@ -52,17 +52,28 @@ class ObservationType(IntEnum):
     SWAP_ROLE = 4
 
 
+class VisibleState:
+    def __init__(self,
+                 coin_list,
+                 num_roles_list
+                 ):
+        self.coin_list = coin_list
+        self.num_roles_list = num_roles_list
+
+
 class Observation:
     def __init__(self,
                  obs_type: ObservationType,
                  obs: Action,
                  player: int,
-                 player_against: int
+                 player_against: int,
+                 visible_state: VisibleState = None
                  ):
         self.obs_type = obs_type
         self.obs = obs
         self.player = player
         self.player_against = player_against
+        self.visible_state = visible_state
 
     def __str__(self):
         obs = [Move, Response, BlockResponse, FlipCard, FlipCard][self.obs_type](self.obs).name
