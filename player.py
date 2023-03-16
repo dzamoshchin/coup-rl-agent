@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from game_data import *
 import numpy as np
 
@@ -11,7 +11,7 @@ class Player:
         self.num_players = num_players
         self.idx = idx
 
-    def move(self, legal_moves: List[Tuple[Move, int]], player_states: List[type]) -> Tuple[Move, int]:
+    def move(self, legal_moves: List[Tuple[Move, int]], game_state: Dict, dummy: bool = False) -> Tuple[Move, int]:
         pass
 
     def respond(self, legal_responses: List[Response]) -> Response:
@@ -33,11 +33,8 @@ class Player:
 class RandomPlayer(Player):
     def __init__(self, coins: int, roles: List[Role], num_players: int, idx: int):
         super().__init__(coins, roles, num_players, idx)
-    
-    def assign(self, coins: int, roles: List[Role], num_players: int, idx: int):
-        super().assign(coins, roles, num_players, idx)
 
-    def move(self, legal_moves: List[Tuple[Move, int]], player_states: List[type]) -> Tuple[Move, int]:
+    def move(self, legal_moves: List[Tuple[Move, int]], game_state: Dict) -> Tuple[Move, int]:
         idx = np.random.randint(len(legal_moves))
         return legal_moves[idx]
 
@@ -57,10 +54,7 @@ class HeuristicPlayer(Player):
     def __init__(self, coins: int, roles: List[Role], num_players: int, idx: int):
         super().__init__(coins, roles, num_players, idx)
     
-    def assign(self, coins: int, roles: List[Role], num_players: int, idx: int):
-        super().assign(coins, roles, num_players, idx)
-
-    def move(self, legal_moves: List[Tuple[Move, int]], player_states: List[type]) -> Tuple[Move, int]:
+    def move(self, legal_moves: List[Tuple[Move, int]], game_state: Dict) -> Tuple[Move, int]:
         return legal_moves[0]
 
     def respond(self, legal_responses: List[Response]) -> Response:

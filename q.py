@@ -2,28 +2,18 @@ from typing import List, Tuple, Dict
 from game_data import *
 import numpy as np
 from player import Player
-from collections import defaultdict
 
 
 class QPlayer(Player):
     def __init__(self, coins: int, roles: List[Role], num_players: int, idx: int,
-                 Q: Dict, N: Dict, c: int, depth: int, num_simulations: int, alpha: float = 0.01):
+                 Q: Dict, N: Dict, c: int, alpha: float = 0.01):
         super().__init__(coins, roles, num_players, idx)
 
         self.c = c  # exploration constant
         self.alpha = alpha  # learning rate
 
-        # should they be initialized to zero on every run?
-        # self.Q = defaultdict(lambda: defaultdict(int)) # action value estimates
-        # self.N = defaultdict(lambda: defaultdict(int)) # visit counts
-
         self.Q = Q
         self.N = N
-
-        self.U = defaultdict()
-
-        self.depth = depth
-        self.num_simulations = num_simulations
 
         self.cur_game_state = [0 for _ in range(num_players)] + [len(roles) for _ in range(num_players)] + roles
         self.past_ha = []
@@ -33,14 +23,13 @@ class QPlayer(Player):
             return 1e4
         return self.Q[s][a] + self.c * np.sqrt(np.log(sum(self.N[s][ap] for ap in self.N[s])) / (1e-4 + self.N[s][a]))
 
-    def move(self, legal_moves: List[Tuple[Move, int]], player_types: List[type]) -> Tuple[Move, int]:
+    def move(self, legal_moves: List[Tuple[Move, int]], game_state: Dict) -> Tuple[Move, int]:
         history = tuple(self.cur_game_state) + (0,)
         a = max(legal_moves, key=lambda a: self.UCB1(history, a))
         self.past_ha.append([history, a])
         self.N[history][a] += 1
         return a
 
-    # TODO: use MCTS for responses/blocks
     def respond(self, legal_responses: List[Response]) -> Response:
         history = tuple(self.cur_game_state) + (0,)
         a = max(legal_responses, key=lambda a: self.UCB1(history, a))

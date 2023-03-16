@@ -3,10 +3,16 @@ from game_data import *
 from player import *
 import numpy as np
 from time import time
+from collections import defaultdict
 # from tqdm import trange
 
-class Simulator:
-    def __init__(self,
+class Simulator():
+
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+    
+    @classmethod
+    def from_start(self,
                  player_types: List[type],
                  params: List[Dict],
                  roles: List[Role] = None,
@@ -14,51 +20,66 @@ class Simulator:
                  roles_per_player: int = 2,
                  verbosity: int = 0, ):
 
-        self.verbosity = verbosity
-        self.cur_turn = 0
-        self.alive_players = [True] * len(player_types)
-        self.roles_per_player = roles_per_player
-        self.player_types = player_types
+        cur_turn = 0
+        alive_players = [True] * len(player_types)
 
         # Initialize standard deck of roles (3 of each role) and shuffle
         if roles is None:
             roles = [Role.AMBASSADOR, Role.ASSASSIN, Role.CAPTAIN, Role.CONTESSA, Role.DUKE] * 3
-            self.roles = roles
-            self.middle_cards = [i for i in roles]
-            np.random.shuffle(self.middle_cards)
+            middle_cards = [i for i in roles]
+            np.random.shuffle(middle_cards)
 
         if len(player_types) * roles_per_player > len(roles):
-            raise ValueError(f"There are {len(players)} players and {roles_per_player} roles per player but just {len(roles)} roles.")
+            raise ValueError(f"There are {len(player_types)} players and {roles_per_player} roles per player but just {len(roles)} roles.")
 
         # Initialize players and give them their roles
-        self.players: List[Player] = []
+        players: List[Player] = []
         for idx, player_type in enumerate(player_types):
-            player_roles = [self.middle_cards.pop(0) for _ in range(roles_per_player)]
-            # player_type.assign(coins, player_roles, len(players), idx)
-            self.players.append(player_type(coins, player_roles, len(player_types), idx, **params[idx]))
+            player_roles = [middle_cards.pop(0) for _ in range(roles_per_player)]
+            players.append(player_type(coins, player_roles, len(player_types), idx, **params[idx]))
 
-    def run_game(self):
-        while True:
-            self.take_turn()
-            if self.is_winner():
-                winner = self.alive_players.index(True)
-                if self.verbosity > 2:
-                    print(f"Player {winner} wins")
-                for i, player in enumerate(self.players):
-                    self.players[i].game_over(won=(i == winner))
-                return winner
+        return self(verbosity=verbosity, cur_turn=cur_turn, alive_players=alive_players, roles_per_player=roles_per_player, player_types=player_types, roles=roles, middle_cards=middle_cards, players=players)
+
+    def check_winner(self) -> int :
+        if self.is_winner():
+            winner = self.alive_players.index(True)
+            if self.verbosity > 2:
+                print(f"Player {winner} wins")
+            for i, player in enumerate(self.players):
+                self.players[i].game_over(won=(i == winner))
+            return winner
+
+    def run_game(self, depth: int = None) -> int:
+        if depth is None:
+            while True:
+                if self.is_winner():
+                    return self.check_winner()
+                self.take_turn()
+                if self.is_winner():
+                    return self.check_winner()
+        else:
+            for _ in range(depth):
+                if self.is_winner():
+                    return self.check_winner()
+                self.take_turn()
+                if self.is_winner():
+                    return self.check_winner()
+            return -1
 
     def is_winner(self):
         return self.alive_players.count(True) == 1
 
-    def take_turn(self):
+    def take_turn(self, action=None):
         # Print game state (optional)
         if self.verbosity > 2:
             self.print_game_state()
         # Player makes a move
         cur_player = self.players[self.cur_turn]
         legal_moves = self.get_legal_moves(cur_player)
-        move, player_against = cur_player.move(legal_moves, self.player_types)
+        if action is not None:
+             move, player_against = action
+        else:
+            move, player_against = cur_player.move(legal_moves, self.get_game_state())
         if (move, player_against) not in legal_moves:
             raise ValueError(f"Player of type {type(cur_player)} made illegal move {move} against {player_against}")
 
@@ -258,14 +279,19 @@ class Simulator:
         if self.verbosity > 1:
             print(obs)
 
+
+    def get_game_state(self):
+        return {'verbosity': 0, 'cur_turn': self.cur_turn, 'alive_players': self.alive_players, 'roles_per_player': self.roles_per_player,
+                'player_types': self.player_types, 'roles': self.roles, 'middle_cards': self.middle_cards, 'players': self.players}
+
     def print_game_state(self):
         for i, player in enumerate(self.players):
             print(f'Player {i}: {player.coins} coins and roles {", ".join([role.name for role in player.roles])}')
         print(f'Deck: {", ".join([role.name for role in self.middle_cards])}\n')
 
 if __name__ == '__main__':
-    from mcts import *
     from q import QPlayer
+    from mcts import MCTSPlayer
     import matplotlib.pyplot as plt
 
     Q = defaultdict(lambda: defaultdict(int)) # action value estimates
@@ -274,12 +300,13 @@ if __name__ == '__main__':
     winners = np.array([0, 0, 0, 0])
     last = np.copy(winners)
     rates = []
-    for i in range(20000):
-        # sim = Simulator([RandomPlayer, RandomPlayer, RandomPlayer, HeuristicPlayer], params=[{}, {}, {}, {}], verbosity=0)
-        sim = Simulator([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'depth':10, 'num_simulations':20, 'alpha':0.1}], verbosity=0)
+    for i in range(30000):
+        # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, HeuristicPlayer], params=[{}, {}, {}, {}], verbosity=0)
+        sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, MCTSPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'depth': 20, 'num_simulations':1, 'alpha':0.1}], verbosity=0)
+        # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'alpha':0.1}], verbosity=0)
         winner = sim.run_game()
         winners[winner] += 1
-        if i % 400 == 0:
+        if i % 10 == 0:
             print(i)
             print(winners)
             print(winners - last)
@@ -288,8 +315,5 @@ if __name__ == '__main__':
             rates.append(((winners-last)[3] / np.sum(winners-last)) * 100)
             last = np.copy(winners)
     plt.plot(rates[1:])
+    plt.show()
     print()
-    
-    # sim = Simulator([RandomPlayer(), RandomPlayer(), MCTSPlayer(Q, c=5.0, d=10, M=20)], verbosity=0)
-    # winner = sim.run_game()
-    # print(winner)
