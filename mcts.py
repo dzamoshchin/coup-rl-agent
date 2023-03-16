@@ -67,7 +67,7 @@ class MCTSPlayer(Player):
             for _ in range(self.num_simulations):
                 new_sim = deepcopy(sim)
                 self.simulate(new_sim, self.depth)
-                self.dummy = False
+            self.dummy = False
 
         action = max(legal_moves, key=lambda a: self.UCB1(history, a))
         self.past_ha.append([history, action])
