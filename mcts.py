@@ -4,7 +4,7 @@ import numpy as np
 from player import Player
 from simulator import Simulator
 from player import *
-import copy
+from copy import deepcopy
 import timeit
 
 
@@ -20,30 +20,24 @@ class MCTSPlayer(Player):
         self.Q = Q
         self.N = N
 
+        self.dummy = False
+
         self.depth = depth
         self.num_simulations = num_simulations
 
         self.cur_game_state = [0 for _ in range(num_players)] + [len(roles) for _ in range(num_players)] + roles
         self.past_ha = []
 
+
+    def __deepcopy__(self, memo):
+        return MCTSPlayer(self.coins, deepcopy(self.roles, memo), self.num_players, self.idx, self.Q,
+                          self.N, self.c, self.depth, self.num_simulations, self.alpha)
+
     def UCB1(self, s, a):
         if self.N[s][a] == 0:
             return 1e4
         return self.Q[s][a] + self.c * np.sqrt(np.log(sum(self.N[s][ap] for ap in self.N[s])) / (1e-4 + self.N[s][a]))
 
-    def create_simulator(self, game_state: Dict) -> Simulator:
-        for idx, player_type in enumerate(game_state["player_types"]):
-            if player_type == MCTSPlayer:
-                game_state["player_types"][idx] = DummyMCTSPlayer
-
-        # replace MCTSPlayers with DummyMCTSPlayers
-        for idx, player in enumerate(game_state["players"]):
-            if isinstance(player, MCTSPlayer):
-                game_state["players"][idx] = DummyMCTSPlayer(player.coins, player.roles, player.num_players, player.idx, player.Q,
-                                                             player.N, player.c, player.depth, player.num_simulations, player.alpha)
-
-        return Simulator(**game_state)
-    
     def simulate(self, sim: Simulator, depth: int):
         if depth <= 0:
             return
@@ -64,16 +58,16 @@ class MCTSPlayer(Player):
                 return
         self.N[history][action] += 1
 
-    def move(self, legal_moves: List[Tuple[Move, int]], game_state: Dict, dummy: bool = False) -> Tuple[Move, int]:
+    def move(self, legal_moves: List[Tuple[Move, int]], game_state: Dict) -> Tuple[Move, int]:
         history = tuple(self.cur_game_state) + (0,)
 
-        if not dummy:
+        sim = Simulator(**game_state)
+        if not self.dummy:
+            self.dummy = True
             for _ in range(self.num_simulations):
-                # starttime = timeit.default_timer()
-                new_game = copy.deepcopy(game_state) # extremely extremely expensive, is there an alternative?
-                # print("time", timeit.default_timer() - starttime)
-                sim = self.create_simulator(new_game)
-                self.simulate(sim, self.depth)
+                new_sim = deepcopy(sim)
+                self.simulate(new_sim, self.depth)
+                self.dummy = False
 
         action = max(legal_moves, key=lambda a: self.UCB1(history, a))
         self.past_ha.append([history, action])
@@ -118,26 +112,3 @@ class MCTSPlayer(Player):
         else:
             for history, action in self.past_ha:
                 self.Q[history][action] = (1-self.alpha) * self.Q[history][action] - self.alpha
-
-class DummyMCTSPlayer(MCTSPlayer):
-    def __init__(self, coins: int, roles: List[Role], num_players: int, idx: int,
-                 Q: Dict, N: Dict, c: int, depth: int, num_simulations: int, alpha: float = 0.01):
-         super().__init__(coins, roles, num_players, idx, Q, N, c, depth, num_simulations, alpha)
-
-    def move(self, legal_moves: List[Tuple[Move, int]], game_state: Dict) -> Tuple[Move, int]:
-        return super().move(legal_moves, game_state, True)
-
-    def respond(self, legal_responses: List[Response]) -> Response:
-        return super().respond(legal_responses)
-
-    def block_respond(self) -> BlockResponse:
-        return super().block_respond()
-
-    def get_observation(self, obs: Observation) -> None:
-        return super().get_observation(obs)
-
-    def flip_role(self) -> int:
-        return super().flip_role()
-    
-    def game_over(self, won) -> None:
-        return super().game_over(won)

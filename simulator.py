@@ -5,6 +5,7 @@ import numpy as np
 from time import time
 from collections import defaultdict
 # from tqdm import trange
+from copy import deepcopy
 
 class Simulator():
 
@@ -55,15 +56,12 @@ class Simulator():
                 if self.is_winner():
                     return self.check_winner()
                 self.take_turn()
-                if self.is_winner():
-                    return self.check_winner()
         else:
             for _ in range(depth):
                 if self.is_winner():
                     return self.check_winner()
                 self.take_turn()
-                if self.is_winner():
-                    return self.check_winner()
+
             return -1
 
     def is_winner(self):
@@ -279,7 +277,6 @@ class Simulator():
         if self.verbosity > 1:
             print(obs)
 
-
     def get_game_state(self):
         return {'verbosity': 0, 'cur_turn': self.cur_turn, 'alive_players': self.alive_players, 'roles_per_player': self.roles_per_player,
                 'player_types': self.player_types, 'roles': self.roles, 'middle_cards': self.middle_cards, 'players': self.players}
@@ -300,13 +297,34 @@ if __name__ == '__main__':
     winners = np.array([0, 0, 0, 0])
     last = np.copy(winners)
     rates = []
-    for i in range(30000):
+    for i in range(50000):
         # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, HeuristicPlayer], params=[{}, {}, {}, {}], verbosity=0)
-        sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, MCTSPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'depth': 20, 'num_simulations':1, 'alpha':0.1}], verbosity=0)
+        # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, MCTSPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'depth':100, 'num_simulations':50, 'alpha':0.1}], verbosity=0)
+        sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'alpha':0.1}], verbosity=0)
+        winner = sim.run_game()
+        winners[winner] += 1
+        if i % 1000 == 0:
+            print(i)
+            print(winners)
+            print(winners - last)
+            print((winners[3] / np.sum(winners)) * 100)
+            print(((winners-last)[3] / np.sum(winners-last)) * 100)
+            rates.append(((winners-last)[3] / np.sum(winners-last)) * 100)
+            last = np.copy(winners)
+    # plt.plot(rates[1:])
+    # plt.show()
+    # print()
+
+    winners = np.array([0, 0, 0, 0])
+    last = np.copy(winners)
+    rates = []
+    for i in range(50000):
+        # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, HeuristicPlayer], params=[{}, {}, {}, {}], verbosity=0)
+        sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, MCTSPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'depth':10, 'num_simulations':20, 'alpha':0.1}], verbosity=0)
         # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'alpha':0.1}], verbosity=0)
         winner = sim.run_game()
         winners[winner] += 1
-        if i % 10 == 0:
+        if i % 1000 == 0:
             print(i)
             print(winners)
             print(winners - last)

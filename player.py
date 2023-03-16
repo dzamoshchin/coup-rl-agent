@@ -11,7 +11,7 @@ class Player:
         self.num_players = num_players
         self.idx = idx
 
-    def move(self, legal_moves: List[Tuple[Move, int]], game_state: Dict, dummy: bool = False) -> Tuple[Move, int]:
+    def move(self, legal_moves: List[Tuple[Move, int]], game_state: Dict) -> Tuple[Move, int]:
         pass
 
     def respond(self, legal_responses: List[Response]) -> Response:
