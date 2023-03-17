@@ -5,13 +5,20 @@ from player import Player
 from simulator import Simulator
 from player import *
 from copy import deepcopy
+from q import QPlayer
 import timeit
 
 
 class MCTSPlayer(Player):
-    def __init__(self, coins: int, roles: List[Role], num_players: int, idx: int,
+    def __init__(self,
+                 coins: int,
+                 roles: List[Role],
+                 num_players: int,
+                 idx: int,
+                 all_player_types: List[type],
+                 all_params: List[Dict],
                  Q: Dict, N: Dict, c: int, depth: int, num_simulations: int, alpha: float = 0.01):
-        super().__init__(coins, roles, num_players, idx)
+        super().__init__(coins, roles, num_players, idx, all_player_types, all_params)
 
         self.c = c  # exploration constant
         self.alpha = alpha  # learning rate
@@ -25,12 +32,20 @@ class MCTSPlayer(Player):
         self.depth = depth
         self.num_simulations = num_simulations
 
-        self.cur_game_state = [0 for _ in range(num_players)] + [len(roles) for _ in range(num_players)] + roles
+        self.cur_game_state = [0 for _ in range(num_players)] + [len(roles) for _ in range(num_players)] + sorted(roles)
+        self.exact_game_state = [2 for _ in range(num_players)] + [len(roles) for _ in range(num_players)] + sorted(roles)
         self.past_ha = []
 
+        self.roles_per_player = len(self.roles)
 
-    def __deepcopy__(self, memo):
-        return MCTSPlayer(self.coins, deepcopy(self.roles, memo), self.num_players, self.idx, self.Q,
+
+    def __deepcopy__(self, memo=None):
+        return MCTSPlayer(self.coins, deepcopy(self.roles),
+                          self.num_players,
+                          self.idx,
+                          self.all_player_types,
+                          self.all_params,
+                          self.Q,
                           self.N, self.c, self.depth, self.num_simulations, self.alpha)
 
     def UCB1(self, s, a):
@@ -58,16 +73,18 @@ class MCTSPlayer(Player):
                 return
         self.N[history][action] += 1
 
-    def move(self, legal_moves: List[Tuple[Move, int]], game_state: Dict) -> Tuple[Move, int]:
+    def move(self, legal_moves: List[Tuple[Move, int]]) -> Tuple[Move, int]:
         history = tuple(self.cur_game_state) + (0,)
 
-        sim = Simulator(**game_state)
-        if not self.dummy:
+        for _ in range(self.num_simulations):
+            sim = Simulator(**deepcopy(self.sample_from_belief()))
+            self.simulate(sim, self.depth)
+        '''if not self.dummy:
             self.dummy = True
             for _ in range(self.num_simulations):
                 new_sim = deepcopy(sim)
                 self.simulate(new_sim, self.depth)
-            self.dummy = False
+            self.dummy = False'''
 
         action = max(legal_moves, key=lambda a: self.UCB1(history, a))
         self.past_ha.append([history, action])
@@ -101,7 +118,43 @@ class MCTSPlayer(Player):
         self.cur_game_state = [coin_bucket(c) for c in obs.visible_state.coin_list] + \
                               [num_roles for num_roles in obs.visible_state.num_roles_list] + \
                               sorted(self.roles)
+        self.exact_game_state = [c for c in obs.visible_state.coin_list] + \
+                              [num_roles for num_roles in obs.visible_state.num_roles_list] + \
+                              sorted(self.roles)
+    
+    def sample_from_belief(self):
+        roles = [Role.AMBASSADOR, Role.ASSASSIN, Role.CAPTAIN, Role.CONTESSA, Role.DUKE] * 3
+        middle_cards = [i for i in roles]
+        np.random.shuffle(middle_cards)
 
+        for role in self.roles:
+            if role != Role.NONE:
+                del middle_cards[middle_cards.index(role)]
+        # Initialize players and give them their roles
+        player_roles = []
+        players = []
+        new_player_types = self.all_player_types[:-1] + [QPlayer]
+        for i in range(self.num_players):
+            if i == self.idx:
+                player_roles.append(self.roles)
+            else:
+                player_roles.append([middle_cards.pop(0) for _ in range(self.exact_game_state[self.num_players + i])] + \
+                                    [Role.NONE for _ in range(2-self.exact_game_state[self.num_players + i])])
+            players.append(self.all_player_types[i](self.coins, player_roles[-1], self.num_players, i,
+                                                    new_player_types, self.all_params, **self.all_params[i]))
+
+        sample = {'verbosity': 0, 'cur_turn': self.idx, 
+                  'alive_players': [self.exact_game_state[i] > 0 for i in range(self.num_players, 2 * self.num_players)],
+                  'roles_per_player': self.roles_per_player,
+                  'player_types': new_player_types,
+                  'params': self.all_params,
+                  'roles': player_roles,
+                  'middle_cards': middle_cards,
+                  'players': players
+                 }
+
+        return sample
+    
     def flip_role(self) -> int:
         return np.random.choice([i for i in range(len(self.roles)) if self.roles[i] != Role.NONE])
 

@@ -5,9 +5,15 @@ from player import Player
 
 
 class QPlayer(Player):
-    def __init__(self, coins: int, roles: List[Role], num_players: int, idx: int,
-                 Q: Dict, N: Dict, c: int, alpha: float = 0.01):
-        super().__init__(coins, roles, num_players, idx)
+    def __init__(self,
+                 coins: int,
+                 roles: List[Role],
+                 num_players: int,
+                 idx: int,
+                 all_player_types: List[type],
+                 all_params: List[Dict],
+                 Q: Dict, N: Dict, c: int, alpha: float = 0.01, **kwargs):
+        super().__init__(coins, roles, num_players, idx, all_player_types, all_params)
 
         self.c = c  # exploration constant
         self.alpha = alpha  # learning rate
@@ -23,7 +29,7 @@ class QPlayer(Player):
             return 1e4
         return self.Q[s][a] + self.c * np.sqrt(np.log(sum(self.N[s][ap] for ap in self.N[s])) / (1e-4 + self.N[s][a]))
 
-    def move(self, legal_moves: List[Tuple[Move, int]], game_state: Dict) -> Tuple[Move, int]:
+    def move(self, legal_moves: List[Tuple[Move, int]]) -> Tuple[Move, int]:
         history = tuple(self.cur_game_state) + (0,)
         a = max(legal_moves, key=lambda a: self.UCB1(history, a))
         self.past_ha.append([history, a])

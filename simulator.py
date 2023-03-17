@@ -5,43 +5,64 @@ import numpy as np
 from time import time
 from collections import defaultdict
 # from tqdm import trange
+import pickle
 from copy import deepcopy
 
-class Simulator():
 
+class Simulator():
     def __init__(self, **kwargs):
+        # The IDE doesn't like when I don't explicitly acknowledge these exist
+        self.players: List[Player] = []
+        self.roles_per_player: int = 0
+        self.alive_players: List[bool] = []
+        self.verbosity: int = 0
+        self.middle_cards: List[Role] = []
+        self.player_types: List[type] = []
         self.__dict__.update(kwargs)
-    
+
     @classmethod
-    def from_start(self,
-                 player_types: List[type],
-                 params: List[Dict],
-                 roles: List[Role] = None,
-                 coins: int = 2,
-                 roles_per_player: int = 2,
-                 verbosity: int = 0, ):
+    def from_start(cls,
+                   player_types: List[type],
+                   params: List[Dict],
+                   player_roles: List[List[Role]] = None,
+                   coins: int = 2,
+                   roles_per_player: int = 2,
+                   verbosity: int = 0, ):
 
         cur_turn = 0
         alive_players = [True] * len(player_types)
 
         # Initialize standard deck of roles (3 of each role) and shuffle
-        if roles is None:
+        if player_roles is None:
             roles = [Role.AMBASSADOR, Role.ASSASSIN, Role.CAPTAIN, Role.CONTESSA, Role.DUKE] * 3
             middle_cards = [i for i in roles]
             np.random.shuffle(middle_cards)
 
-        if len(player_types) * roles_per_player > len(roles):
-            raise ValueError(f"There are {len(player_types)} players and {roles_per_player} roles per player but just {len(roles)} roles.")
+            if len(player_types) * roles_per_player > len(roles):
+                raise ValueError(
+                    f"There are {len(player_types)} players and {roles_per_player} roles per player but just {len(roles)} roles.")
 
-        # Initialize players and give them their roles
-        players: List[Player] = []
-        for idx, player_type in enumerate(player_types):
-            player_roles = [middle_cards.pop(0) for _ in range(roles_per_player)]
-            players.append(player_type(coins, player_roles, len(player_types), idx, **params[idx]))
+            # Initialize players and give them their roles
+            players: List[Player] = []
+            for idx, player_type in enumerate(player_types):
+                player_roles = [middle_cards.pop(0) for _ in range(roles_per_player)]
+                players.append(player_type(coins, player_roles, len(player_types), idx,
+                                           player_types, params, **params[idx]))
+        else:
+            players: List[Player] = []
+            middle_cards = [Role.AMBASSADOR, Role.ASSASSIN, Role.CAPTAIN, Role.CONTESSA, Role.DUKE] * 3
+            np.random.shuffle(middle_cards)
+            for idx, player in enumerate(player_roles):
+                players.append(player_types[idx](coins, player_roles, len(player_types), idx,
+                                                 player_types, params, **params[idx]))
+                for role in player:
+                    del middle_cards[middle_cards.index(role)]
 
-        return self(verbosity=verbosity, cur_turn=cur_turn, alive_players=alive_players, roles_per_player=roles_per_player, player_types=player_types, roles=roles, middle_cards=middle_cards, players=players)
+        return cls(verbosity=verbosity, cur_turn=cur_turn, alive_players=alive_players,
+                   roles_per_player=roles_per_player, player_types=player_types, roles=player_roles,
+                   middle_cards=middle_cards, players=players)
 
-    def check_winner(self) -> int :
+    def check_winner(self) -> int:
         if self.is_winner():
             winner = self.alive_players.index(True)
             if self.verbosity > 2:
@@ -75,9 +96,9 @@ class Simulator():
         cur_player = self.players[self.cur_turn]
         legal_moves = self.get_legal_moves(cur_player)
         if action is not None:
-             move, player_against = action
+            move, player_against = action
         else:
-            move, player_against = cur_player.move(legal_moves, self.get_game_state())
+            move, player_against = cur_player.move(legal_moves)
         if (move, player_against) not in legal_moves:
             raise ValueError(f"Player of type {type(cur_player)} made illegal move {move} against {player_against}")
 
@@ -96,7 +117,7 @@ class Simulator():
 
         # Other players can respond to the move
         success = True
-        for player in self.players[self.cur_turn+1:] + self.players[:self.cur_turn]:
+        for player in self.players[self.cur_turn + 1:] + self.players[:self.cur_turn]:
             legal_responses = self.get_legal_responses(player_against == player.idx, move)
             if len(legal_responses) == 1:
                 break
@@ -269,7 +290,7 @@ class Simulator():
 
     def send_observation(self, obs: Observation):
         visible_state = VisibleState(
-            [player.coins for player in self.players], 
+            [player.coins for player in self.players],
             [len([i for i in player.roles if i != Role.NONE]) for player in self.players])
         obs.visible_state = visible_state
         for player in self.players:
@@ -278,38 +299,75 @@ class Simulator():
             print(obs)
 
     def get_game_state(self):
-        return {'verbosity': 0, 'cur_turn': self.cur_turn, 'alive_players': self.alive_players, 'roles_per_player': self.roles_per_player,
-                'player_types': self.player_types, 'roles': self.roles, 'middle_cards': self.middle_cards, 'players': self.players}
+        return {'verbosity': 0, 'cur_turn': self.cur_turn, 'alive_players': self.alive_players,
+                'roles_per_player': self.roles_per_player,
+                'player_types': self.player_types, 'middle_cards': self.middle_cards,
+                'players': self.players}
 
     def print_game_state(self):
         for i, player in enumerate(self.players):
             print(f'Player {i}: {player.coins} coins and roles {", ".join([role.name for role in player.roles])}')
         print(f'Deck: {", ".join([role.name for role in self.middle_cards])}\n')
 
+
 if __name__ == '__main__':
     from q import QPlayer
     from mcts import MCTSPlayer
     import matplotlib.pyplot as plt
 
-    Q = defaultdict(lambda: defaultdict(int)) # action value estimates
-    N = defaultdict(lambda: defaultdict(int)) # visit counts
+    # Q = defaultdict(defaultdict(int).copy)  # action value estimates
+    # N = defaultdict(defaultdict(int).copy)  # visit counts
+    Q = pickle.load(open('q_weights', 'rb'))
+    N = pickle.load(open('n_weights', 'rb'))
 
     winners = np.array([0, 0, 0, 0])
     last = np.copy(winners)
     rates = []
-    for i in range(50000):
-        # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, HeuristicPlayer], params=[{}, {}, {}, {}], verbosity=0)
-        sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, MCTSPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'depth':100, 'num_simulations':50, 'alpha':0.1}], verbosity=0)
-        # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'alpha':0.1}], verbosity=0)
+    for i in range(0):
+        sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer],
+                                   params=[{}, {}, {},
+                                           {'Q': Q, 'N': N,
+                                            'c': .01,
+                                            'depth': 100,
+                                            'num_simulations': 10,
+                                            'alpha': 0.1}],
+                                   verbosity=0)
         winner = sim.run_game()
         winners[winner] += 1
-        if i % 1000 == 0:
+        if i % 500 == 0:
             print(i)
             print(winners)
             print(winners - last)
             print((winners[3] / np.sum(winners)) * 100)
-            print(((winners-last)[3] / np.sum(winners-last)) * 100)
-            rates.append(((winners-last)[3] / np.sum(winners-last)) * 100)
+            print(((winners - last)[3] / np.sum(winners - last)) * 100)
+            rates.append(((winners - last)[3] / np.sum(winners - last)) * 100)
+            last = np.copy(winners)
+    plt.plot(rates[1:])
+    plt.show()
+    print()
+    # pickle.dump(Q, open('q_weights', 'wb'))
+    # pickle.dump(N, open('n_weights', 'wb'))
+
+    for i in range(20):
+        # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, HeuristicPlayer], params=[{}, {}, {}, {}], verbosity=0)
+        sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, MCTSPlayer],
+                                   params=[{}, {}, {},
+                                           {'Q': Q, 'N': N,
+                                            'c': .01,
+                                            'depth': 100,
+                                            'num_simulations': 10,
+                                            'alpha': 0.1}],
+                                   verbosity=0)
+        # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'alpha':0.1}], verbosity=0)
+        winner = sim.run_game()
+        winners[winner] += 1
+        if i % 1 == 0:
+            print(i)
+            print(winners)
+            print(winners - last)
+            print((winners[3] / np.sum(winners)) * 100)
+            print(((winners - last)[3] / np.sum(winners - last)) * 100)
+            rates.append(((winners - last)[3] / np.sum(winners - last)) * 100)
             last = np.copy(winners)
     plt.plot(rates[1:])
     plt.show()
