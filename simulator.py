@@ -1,4 +1,4 @@
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Union
 from game_data import *
 from player import *
 import numpy as np
@@ -71,19 +71,22 @@ class Simulator():
                 self.players[i].game_over(won=(i == winner))
             return winner
 
-    def run_game(self, depth: int = None) -> int:
+    def run_game(self, depth: int = None) -> Union[int, Tuple[int, bool], Tuple[VisibleState, bool]]:
         if depth is None:
-            while True:
+            for _ in range(100):
                 if self.is_winner():
                     return self.check_winner()
                 self.take_turn()
+            return 4
         else:
             for _ in range(depth):
                 if self.is_winner():
-                    return self.check_winner()
+                    return self.check_winner(), True
                 self.take_turn()
 
-            return -1
+            return VisibleState(
+                    [player.coins for player in self.players],
+                    [len([i for i in player.roles if i != Role.NONE]) for player in self.players]), False
 
     def is_winner(self):
         return self.alive_players.count(True) == 1
@@ -105,6 +108,8 @@ class Simulator():
         # Other players observe the move
         obs = Observation(ObservationType.MOVE, move, self.cur_turn, player_against, None)
         self.send_observation(obs)
+
+        player_against = (player_against + cur_player.idx) % len(self.players)
 
         # Players who assassinate pay 3 coins up front
         if move == Move.ASSASSINATE:
@@ -266,17 +271,19 @@ class Simulator():
         cp_idx = player.idx
         alive_indices = [i for i in range(len(self.alive_players)) if i != cp_idx and self.alive_players[i]]
 
-        if player.coins >= 10:
-            return [(Move.COUP, player_against) for player_against in alive_indices]
+        mod_idx = lambda idx: (idx - cp_idx) % len(self.players)
 
-        legal_moves = [(move, cp_idx) for move in [Move.INCOME, Move.FOREIGN_AID, Move.SWAP_CARDS, Move.TAX]]
+        if player.coins >= 10:
+            return [(Move.COUP, mod_idx(player_against)) for player_against in alive_indices]
+
+        legal_moves = [(move, 0) for move in [Move.INCOME, Move.FOREIGN_AID, Move.SWAP_CARDS, Move.TAX]]
         if player.coins >= 3:
-            legal_moves += [(Move.ASSASSINATE, player_against) for player_against in alive_indices]
+            legal_moves += [(Move.ASSASSINATE, mod_idx(player_against)) for player_against in alive_indices]
         if player.coins >= 7:
-            legal_moves += [(Move.COUP, player_against) for player_against in alive_indices]
+            legal_moves += [(Move.COUP, mod_idx(player_against)) for player_against in alive_indices]
         for player_against in alive_indices:
             if self.players[player_against].coins > 0:
-                legal_moves.append((Move.STEAL, player_against))
+                legal_moves.append((Move.STEAL, mod_idx(player_against)))
 
         return legal_moves
 
@@ -315,18 +322,31 @@ if __name__ == '__main__':
     from mcts import MCTSPlayer
     import matplotlib.pyplot as plt
 
-    # Q = defaultdict(defaultdict(int).copy)  # action value estimates
-    # N = defaultdict(defaultdict(int).copy)  # visit counts
-    Q = pickle.load(open('q_weights', 'rb'))
-    N = pickle.load(open('n_weights', 'rb'))
+    Q_new = defaultdict(defaultdict(int).copy)  # action value estimates
+    N_new = defaultdict(defaultdict(int).copy)  # visit counts
+    Q_saved = pickle.load(open('q2_weights', 'rb'))
+    N_saved = pickle.load(open('n2_weights', 'rb'))
 
-    winners = np.array([0, 0, 0, 0])
+    winners = np.array([0, 0, 0, 0, 0])
     last = np.copy(winners)
     rates = []
-    for i in range(0):
-        sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer],
-                                   params=[{}, {}, {},
-                                           {'Q': Q, 'N': N,
+    for i in range(5000):
+        # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer],
+        #                          params=[{}, {}, {},
+        #                                    {'Q': Q_new, 'N': N_new,
+        #                                     'c': .01,
+        #                                     'depth': 100,
+        #                                     'num_simulations': 10,
+        #                                     'alpha': 0.1}],
+        #                            verbosity=0)
+        sim = Simulator.from_start([QPlayer, RandomPlayer, RandomPlayer, RandomPlayer],
+                                 params=[{'Q': Q_saved, 'N': N_saved,
+                                            'c': .01,
+                                            'depth': 100,
+                                            'num_simulations': 10,
+                                            'alpha': 0.1,
+                                            'learn': False}]*3 + \
+                                           [{'Q': Q_new, 'N': N_new,
                                             'c': .01,
                                             'depth': 100,
                                             'num_simulations': 10,
@@ -334,41 +354,43 @@ if __name__ == '__main__':
                                    verbosity=0)
         winner = sim.run_game()
         winners[winner] += 1
-        if i % 500 == 0:
+        if i % 4999 == 0:
             print(i)
             print(winners)
             print(winners - last)
-            print((winners[3] / np.sum(winners)) * 100)
-            print(((winners - last)[3] / np.sum(winners - last)) * 100)
-            rates.append(((winners - last)[3] / np.sum(winners - last)) * 100)
+            print((winners[0] / np.sum(winners)) * 100)
+            print(((winners - last)[0] / np.sum(winners - last)) * 100)
+            rates.append(((winners - last)[0] / np.sum(winners - last)) * 100)
             last = np.copy(winners)
     plt.plot(rates[1:])
     plt.show()
     print()
-    # pickle.dump(Q, open('q_weights', 'wb'))
-    # pickle.dump(N, open('n_weights', 'wb'))
+    # pickle.dump(Q_new, open('q_weights', 'wb'))
+    # pickle.dump(N_new, open('n_weights', 'wb'))
+    # pickle.dump(N_new, open('n2_weights', 'wb'))
+    # pickle.dump(Q_new, open('q2_weights', 'wb'))
 
-    for i in range(20):
-        # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, HeuristicPlayer], params=[{}, {}, {}, {}], verbosity=0)
-        sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, MCTSPlayer],
-                                   params=[{}, {}, {},
-                                           {'Q': Q, 'N': N,
-                                            'c': .01,
-                                            'depth': 100,
-                                            'num_simulations': 10,
-                                            'alpha': 0.1}],
-                                   verbosity=0)
-        # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'alpha':0.1}], verbosity=0)
-        winner = sim.run_game()
-        winners[winner] += 1
-        if i % 1 == 0:
-            print(i)
-            print(winners)
-            print(winners - last)
-            print((winners[3] / np.sum(winners)) * 100)
-            print(((winners - last)[3] / np.sum(winners - last)) * 100)
-            rates.append(((winners - last)[3] / np.sum(winners - last)) * 100)
-            last = np.copy(winners)
-    plt.plot(rates[1:])
-    plt.show()
-    print()
+    # for i in range(500):
+    #     # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, HeuristicPlayer], params=[{}, {}, {}, {}], verbosity=0)
+    #     sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, MCTSPlayer],
+    #                                params=[{}, {}, {},
+    #                                        {'Q': Q, 'N': N,
+    #                                         'c': .01,
+    #                                         'depth': 5,
+    #                                         'num_simulations': 10,
+    #                                         'alpha': 0.1}],
+    #                                verbosity=0)
+    #     # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'alpha':0.1}], verbosity=0)
+    #     winner = sim.run_game()
+    #     winners[winner] += 1
+    #     if i % 20 == 0:
+    #         print(i)
+    #         print(winners)
+    #         print(winners - last)
+    #         print((winners[3] / np.sum(winners)) * 100)
+    #         print(((winners - last)[3] / np.sum(winners - last)) * 100)
+    #         rates.append(((winners - last)[3] / np.sum(winners - last)) * 100)
+    #         last = np.copy(winners)
+    # plt.plot(rates[1:])
+    # plt.show()
+    # print()

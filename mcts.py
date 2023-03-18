@@ -9,7 +9,7 @@ from q import QPlayer
 import timeit
 
 
-class MCTSPlayer(Player):
+class MCTSPlayer(QPlayer):
     def __init__(self,
                  coins: int,
                  roles: List[Role],
@@ -17,36 +17,18 @@ class MCTSPlayer(Player):
                  idx: int,
                  all_player_types: List[type],
                  all_params: List[Dict],
-                 Q: Dict, N: Dict, c: int, depth: int, num_simulations: int, alpha: float = 0.01):
-        super().__init__(coins, roles, num_players, idx, all_player_types, all_params)
+                 Q: Dict, N: Dict, c: int, alpha: float = 0.01, depth: int = 10, num_simulations: int = 10):
+        super().__init__(coins, roles, num_players, idx, all_player_types, all_params, Q, N, c, alpha)
 
-        self.c = c  # exploration constant
-        self.alpha = alpha  # learning rate
         self.gamma = 1
-
-        self.Q = Q
-        self.N = N
-
-        self.dummy = False
 
         self.depth = depth
         self.num_simulations = num_simulations
 
-        self.cur_game_state = [0 for _ in range(num_players)] + [len(roles) for _ in range(num_players)] + sorted(roles)
         self.exact_game_state = [2 for _ in range(num_players)] + [len(roles) for _ in range(num_players)] + sorted(roles)
-        self.past_ha = []
-
+        
         self.roles_per_player = len(self.roles)
 
-
-    def __deepcopy__(self, memo=None):
-        return MCTSPlayer(self.coins, deepcopy(self.roles),
-                          self.num_players,
-                          self.idx,
-                          self.all_player_types,
-                          self.all_params,
-                          self.Q,
-                          self.N, self.c, self.depth, self.num_simulations, self.alpha)
 
     def UCB1(self, s, a):
         if self.N[s][a] == 0:
@@ -54,7 +36,7 @@ class MCTSPlayer(Player):
         return self.Q[s][a] + self.c * np.sqrt(np.log(sum(self.N[s][ap] for ap in self.N[s])) / (1e-4 + self.N[s][a]))
 
     def simulate(self, sim: Simulator, depth: int):
-        if depth <= 0:
+        '''if depth <= 0:
             return
         
         legal_moves = sim.get_legal_moves(sim.players[self.idx])
@@ -66,55 +48,66 @@ class MCTSPlayer(Player):
                 self.N[history][move[0]] = 0
             return
 
-        action = max(legal_moves, key=lambda a: self.UCB1(history, a))
         sim.take_turn(action)
         while (sim.cur_turn != self.idx):
             if sim.run_game(1) != -1:
                 return
         self.N[history][action] += 1
+        return '''
+        # start_time = timeit.default_timer()
+        visible_state, game_over = sim.run_game(depth)
+        # print(timeit.default_timer() - start_time)
+        if game_over:
+            if visible_state == self.idx:
+                utility = 1
+            else:
+                utility = -1
+        else:
+            final_game_state = [coin_bucket(c) for c in visible_state.coin_list] + \
+                                            [num_roles for num_roles in visible_state.num_roles_list] + \
+                                            sorted(self.roles)
+            
+            history = tuple(final_game_state) + (0,)
+            if len(self.Q[history]) == 0:
+                utility = 0
+            else:
+                next_action = max(self.Q[history], key=lambda a: self.Q[history][a])
+                utility = self.Q[history][next_action]
+        
+        return utility
+
+
+
 
     def move(self, legal_moves: List[Tuple[Move, int]]) -> Tuple[Move, int]:
         history = tuple(self.cur_game_state) + (0,)
 
         for _ in range(self.num_simulations):
-            sim = Simulator(**deepcopy(self.sample_from_belief()))
-            self.simulate(sim, self.depth)
-        '''if not self.dummy:
-            self.dummy = True
-            for _ in range(self.num_simulations):
-                new_sim = deepcopy(sim)
-                self.simulate(new_sim, self.depth)
-            self.dummy = False'''
+            action = max(legal_moves, key=lambda a: self.UCB1(history, a))
+            sim = Simulator(**self.sample_from_belief())
+            utility = self.simulate(sim, self.depth)
+            self.N[history][action] += 1
+            self.Q[history][action] += (utility - self.Q[history][action]) / self.N[history][action]
 
         action = max(legal_moves, key=lambda a: self.UCB1(history, a))
         self.past_ha.append([history, action])
-        self.N[history][action] += 1
         return action
 
     def respond(self, legal_responses: List[Response]) -> Response:
-        history = tuple(self.cur_game_state) + (0,)
+        history = tuple(self.cur_game_state) + (1,)
         a = max(legal_responses, key=lambda a: self.UCB1(history, a))
         self.past_ha.append([history, a])
         self.N[history][a] += 1
         return a
 
     def block_respond(self) -> BlockResponse:
-        history = tuple(self.cur_game_state) + (0,)
+        history = tuple(self.cur_game_state) + (2,)
         a = max([BlockResponse.NOTHING, BlockResponse.CALL_BS], key=lambda a: self.UCB1(history, a))
         self.past_ha.append([history, a])
         self.N[history][a] += 1
         return a
 
     def get_observation(self, obs: Observation) -> None:
-        def coin_bucket(c):
-            # if c < 3:
-            #     return 0
-            if c < 7:
-                return 1
-            # if c < 10:
-            #     return 2
-            return 3
-
         self.cur_game_state = [coin_bucket(c) for c in obs.visible_state.coin_list] + \
                               [num_roles for num_roles in obs.visible_state.num_roles_list] + \
                               sorted(self.roles)
@@ -136,7 +129,7 @@ class MCTSPlayer(Player):
         new_player_types = self.all_player_types[:-1] + [QPlayer]
         for i in range(self.num_players):
             if i == self.idx:
-                player_roles.append(self.roles)
+                player_roles.append(deepcopy(self.roles))
             else:
                 player_roles.append([middle_cards.pop(0) for _ in range(self.exact_game_state[self.num_players + i])] + \
                                     [Role.NONE for _ in range(2-self.exact_game_state[self.num_players + i])])
@@ -165,3 +158,13 @@ class MCTSPlayer(Player):
         else:
             for history, action in self.past_ha:
                 self.Q[history][action] = (1-self.alpha) * self.Q[history][action] - self.alpha
+
+
+def coin_bucket(c):
+            # if c < 3:
+            #     return 0
+            if c < 7:
+                return 1
+            # if c < 10:
+            #     return 2
+            return 3

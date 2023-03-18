@@ -46,7 +46,8 @@ class RandomPlayer(Player):
                  num_players: int,
                  idx: int,
                  all_player_types: List[type],
-                 all_params: List[Dict]):
+                 all_params: List[Dict],
+                 **kwargs):
         super().__init__(coins, roles, num_players, idx, all_player_types, all_params)
 
     def move(self, legal_moves: List[Tuple[Move, int]]) -> Tuple[Move, int]:
