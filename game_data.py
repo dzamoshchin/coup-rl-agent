@@ -60,6 +60,9 @@ class VisibleState:
         self.coin_list = coin_list
         self.num_roles_list = num_roles_list
 
+    def __str__(self):
+        return f"Coins: {self.coin_list}, Roles: {self.num_roles_list}"
+
 
 class Observation:
     def __init__(self,
@@ -77,7 +80,7 @@ class Observation:
 
     def __str__(self):
         obs = [Move, Response, BlockResponse, FlipCard, FlipCard][self.obs_type](self.obs).name
-        return f'Observation: {ObservationType(self.obs_type).name}, {obs}, Player {self.player} to {self.player_against}'
+        return f'Observation: {ObservationType(self.obs_type).name}, {obs}, Player {self.player} to {self.player_against + self.player}'
 
 
 BLOCKABLE_MOVES_ALL = (Move.FOREIGN_AID,) # Anyone can block Foreign Aid

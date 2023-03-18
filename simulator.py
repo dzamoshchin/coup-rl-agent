@@ -137,7 +137,7 @@ class Simulator():
 
             # Handle blocks and BS calls
             if response == Response.BLOCK:
-                if move in BLOCKABLE_MOVES:
+                if move in BLOCKABLE_MOVES or BLOCKABLE_MOVES_ALL:
                     success = self.handle_block(cur_player, player, move)
                     break
 
@@ -324,13 +324,15 @@ if __name__ == '__main__':
 
     Q_new = defaultdict(defaultdict(int).copy)  # action value estimates
     N_new = defaultdict(defaultdict(int).copy)  # visit counts
-    Q_saved = pickle.load(open('q2_weights', 'rb'))
-    N_saved = pickle.load(open('n2_weights', 'rb'))
+    Q_saved = pickle.load(open('q_weights', 'rb'))
+    N_saved = pickle.load(open('n_weights', 'rb'))
+    Q2_saved = pickle.load(open('q2_weights', 'rb'))
+    N2_saved = pickle.load(open('n2_weights', 'rb'))
 
     winners = np.array([0, 0, 0, 0, 0])
     last = np.copy(winners)
     rates = []
-    for i in range(5000):
+    for i in range(150000):
         # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer],
         #                          params=[{}, {}, {},
         #                                    {'Q': Q_new, 'N': N_new,
@@ -339,7 +341,7 @@ if __name__ == '__main__':
         #                                     'num_simulations': 10,
         #                                     'alpha': 0.1}],
         #                            verbosity=0)
-        sim = Simulator.from_start([QPlayer, RandomPlayer, RandomPlayer, RandomPlayer],
+        sim = Simulator.from_start([QPlayer, QPlayer, QPlayer, QPlayer],
                                  params=[{'Q': Q_saved, 'N': N_saved,
                                             'c': .01,
                                             'depth': 100,
@@ -347,26 +349,26 @@ if __name__ == '__main__':
                                             'alpha': 0.1,
                                             'learn': False}]*3 + \
                                            [{'Q': Q_new, 'N': N_new,
-                                            'c': .01,
+                                            'c': .1,
                                             'depth': 100,
                                             'num_simulations': 10,
-                                            'alpha': 0.1}],
+                                            'alpha': 0.05}] * 1,
                                    verbosity=0)
         winner = sim.run_game()
         winners[winner] += 1
-        if i % 4999 == 0:
+        if i % 1000 == 0:
             print(i)
             print(winners)
             print(winners - last)
-            print((winners[0] / np.sum(winners)) * 100)
-            print(((winners - last)[0] / np.sum(winners - last)) * 100)
-            rates.append(((winners - last)[0] / np.sum(winners - last)) * 100)
+            print((winners[3] / np.sum(winners)) * 100)
+            print(((winners - last)[3] / np.sum(winners - last)) * 100)
+            rates.append(((winners - last)[3] / np.sum(winners - last)) * 100)
             last = np.copy(winners)
     plt.plot(rates[1:])
     plt.show()
     print()
-    # pickle.dump(Q_new, open('q_weights', 'wb'))
-    # pickle.dump(N_new, open('n_weights', 'wb'))
+    pickle.dump(Q_new, open('q3_weights', 'wb'))
+    pickle.dump(N_new, open('n3_weights', 'wb'))
     # pickle.dump(N_new, open('n2_weights', 'wb'))
     # pickle.dump(Q_new, open('q2_weights', 'wb'))
 
