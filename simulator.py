@@ -329,6 +329,7 @@ def get_utilities_from_Q(Q):
 
 if __name__ == '__main__':
     from q import QPlayer
+    from qmemory import QMemoryPlayer
     from mcts import MCTSPlayer
     from mccfr import MCCFRPlayer
     from heuristic import HeuristicPlayer, AdvancedHeuristicPlayer
@@ -346,25 +347,30 @@ if __name__ == '__main__':
     N2_saved = pickle.load(open('n2_weights', 'rb'))
     Q_adv_saved = pickle.load(open('q_adv_weights', 'rb'))
     N_adv_saved = pickle.load(open('n_adv_weights', 'rb'))
+    Q_mem_saved = pickle.load(open('q_mem_weights', 'rb'))
+    N_mem_saved = pickle.load(open('n_mem_weights', 'rb'))
 
     utilities_saved = get_utilities_from_Q(Q2_saved)
 
     winners = np.array([0, 0, 0, 0, 0])
     last = np.copy(winners)
     rates = []
-    for i in range(100000):
-        sim = Simulator.from_start([QPlayer, QPlayer, AdvancedHeuristicPlayer],
+    for i in range(5000):
+        players = np.random.choice([QPlayer, QPlayer, HumanPlayer])
+        
+        sim = Simulator.from_start([QPlayer, QPlayer, QMemoryPlayer],
                                  params=[{'Q': Q_adv_saved, 'N': N_adv_saved,
                                             'c': .01,
                                             'depth': 100,
                                             'num_simulations': 10,
                                             'alpha': 0.1,
                                             'learn': False}]*2+
-                                           [{'Q': Q_new, 'N': N_new,
+                                           [{'Q': Q_mem_saved, 'N': N_mem_saved,
                                             'c': .01,
                                             'depth': 100,
                                             'num_simulations': 10,
-                                            'alpha': 0.1}],
+                                            'alpha': 0.1,
+                                            'learn': False}],
                                    verbosity=0)
         # sim = Simulator.from_start([QPlayer, QPlayer, QPlayer, MCCFRPlayer],
         #                          params=[{'Q': Q_saved, 'N': N_saved,
@@ -392,8 +398,8 @@ if __name__ == '__main__':
     plt.plot(rates[1:])
     plt.show()
     print()
-    # pickle.dump(Q_new, open('q2_adv_weights', 'wb'))
-    # pickle.dump(N_new, open('n2_adv_weights', 'wb'))
+    # pickle.dump(Q_new, open('q2_mem_weights', 'wb'))
+    # pickle.dump(N_new, open('n2_mem_weights', 'wb'))
     # pickle.dump(N_new, open('n2_weights', 'wb'))
     # pickle.dump(Q_new, open('q2_weights', 'wb'))
 
