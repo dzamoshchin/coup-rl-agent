@@ -84,9 +84,11 @@ class Simulator():
                     return self.check_winner(), True
                 self.take_turn()
 
-            return VisibleState(
-                    [player.coins for player in self.players],
-                    [len([i for i in player.roles if i != Role.NONE]) for player in self.players]), False
+            return self.get_visible_state(), False
+
+    def get_visible_state(self):
+        return VisibleState([player.coins for player in self.players],
+                            [len([i for i in player.roles if i != Role.NONE]) for player in self.players])
 
     def is_winner(self):
         return self.alive_players.count(True) == 1
@@ -212,7 +214,7 @@ class Simulator():
 
         # Handle BS call on the block
         if block_response == BlockResponse.CALL_BS:
-            return not self.handle_bs_call(blocker, block_against, move)
+            return not self.handle_bs_call(blocker, block_against, move, True)
         return False
 
     def handle_bs_call(self, bs_against: Player, bs_caller: Player, move: Move, block: bool = False) -> bool:
@@ -317,58 +319,81 @@ class Simulator():
         print(f'Deck: {", ".join([role.name for role in self.middle_cards])}\n')
 
 
+def get_utilities_from_Q(Q):
+    utilities = defaultdict(float)
+    for s in Q:
+        if len(Q[s]) > 0:
+            utilities[s] = max(Q[s].values())
+    return utilities
+
+
 if __name__ == '__main__':
     from q import QPlayer
     from mcts import MCTSPlayer
+    from mccfr import MCCFRPlayer
+    from heuristic import HeuristicPlayer, AdvancedHeuristicPlayer
     import matplotlib.pyplot as plt
 
     Q_new = defaultdict(defaultdict(int).copy)  # action value estimates
     N_new = defaultdict(defaultdict(int).copy)  # visit counts
+
+    regret_new = defaultdict(defaultdict(int).copy)  # total regrets
+    strat_profile_new = defaultdict(defaultdict(int).copy)  # cumulative strategy profile
+
     Q_saved = pickle.load(open('q_weights', 'rb'))
     N_saved = pickle.load(open('n_weights', 'rb'))
     Q2_saved = pickle.load(open('q2_weights', 'rb'))
     N2_saved = pickle.load(open('n2_weights', 'rb'))
+    Q_adv_saved = pickle.load(open('q_adv_weights', 'rb'))
+    N_adv_saved = pickle.load(open('n_adv_weights', 'rb'))
+
+    utilities_saved = get_utilities_from_Q(Q2_saved)
 
     winners = np.array([0, 0, 0, 0, 0])
     last = np.copy(winners)
     rates = []
-    for i in range(150000):
-        # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer],
-        #                          params=[{}, {}, {},
-        #                                    {'Q': Q_new, 'N': N_new,
-        #                                     'c': .01,
-        #                                     'depth': 100,
-        #                                     'num_simulations': 10,
-        #                                     'alpha': 0.1}],
-        #                            verbosity=0)
-        sim = Simulator.from_start([QPlayer, QPlayer, QPlayer, QPlayer],
-                                 params=[{'Q': Q_saved, 'N': N_saved,
+    for i in range(100000):
+        sim = Simulator.from_start([QPlayer, QPlayer, AdvancedHeuristicPlayer],
+                                 params=[{'Q': Q_adv_saved, 'N': N_adv_saved,
                                             'c': .01,
                                             'depth': 100,
                                             'num_simulations': 10,
                                             'alpha': 0.1,
-                                            'learn': False}]*3 + \
+                                            'learn': False}]*2+
                                            [{'Q': Q_new, 'N': N_new,
-                                            'c': .1,
+                                            'c': .01,
                                             'depth': 100,
                                             'num_simulations': 10,
-                                            'alpha': 0.05}] * 1,
+                                            'alpha': 0.1}],
                                    verbosity=0)
+        # sim = Simulator.from_start([QPlayer, QPlayer, QPlayer, MCCFRPlayer],
+        #                          params=[{'Q': Q_saved, 'N': N_saved,
+        #                                     'c': .01,
+        #                                     'depth': 100,
+        #                                     'num_simulations': 10,
+        #                                     'alpha': 0.1,
+        #                                     'learn': False}]*3 + \
+        #                                    [{'utilities': utilities_saved
+        #                                     'depth': 10,
+        #                                     'alpha': 0.05,
+        #                                     'regrets': regret_new,
+        #                                     'strat_profile': strat_profile_new}] * 1,
+        #                            verbosity=0)
         winner = sim.run_game()
         winners[winner] += 1
         if i % 1000 == 0:
             print(i)
             print(winners)
             print(winners - last)
-            print((winners[3] / np.sum(winners)) * 100)
-            print(((winners - last)[3] / np.sum(winners - last)) * 100)
-            rates.append(((winners - last)[3] / np.sum(winners - last)) * 100)
+            print((winners[2] / np.sum(winners)) * 100)
+            print(((winners - last)[2] / np.sum(winners - last)) * 100)
+            rates.append(((winners - last)[2] / np.sum(winners - last)) * 100)
             last = np.copy(winners)
     plt.plot(rates[1:])
     plt.show()
     print()
-    pickle.dump(Q_new, open('q3_weights', 'wb'))
-    pickle.dump(N_new, open('n3_weights', 'wb'))
+    # pickle.dump(Q_new, open('q2_adv_weights', 'wb'))
+    # pickle.dump(N_new, open('n2_adv_weights', 'wb'))
     # pickle.dump(N_new, open('n2_weights', 'wb'))
     # pickle.dump(Q_new, open('q2_weights', 'wb'))
 
