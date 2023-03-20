@@ -355,10 +355,10 @@ if __name__ == '__main__':
     winners = np.array([0, 0, 0, 0, 0])
     last = np.copy(winners)
     rates = []
-    for i in range(5000):
-        players = np.random.choice([QPlayer, QPlayer, HumanPlayer])
+    for i in range(200000):
+        players = np.random.choice([QPlayer, QPlayer, QPlayer])
         
-        sim = Simulator.from_start([QPlayer, QPlayer, QMemoryPlayer],
+        sim = Simulator.from_start([AdvancedHeuristicPlayer, AdvancedHeuristicPlayer, QMemoryPlayer],
                                  params=[{'Q': Q_adv_saved, 'N': N_adv_saved,
                                             'c': .01,
                                             'depth': 100,
@@ -370,7 +370,7 @@ if __name__ == '__main__':
                                             'depth': 100,
                                             'num_simulations': 10,
                                             'alpha': 0.1,
-                                            'learn': False}],
+                                            'learn': True}],
                                    verbosity=0)
         # sim = Simulator.from_start([QPlayer, QPlayer, QPlayer, MCCFRPlayer],
         #                          params=[{'Q': Q_saved, 'N': N_saved,
@@ -398,8 +398,8 @@ if __name__ == '__main__':
     plt.plot(rates[1:])
     plt.show()
     print()
-    # pickle.dump(Q_new, open('q2_mem_weights', 'wb'))
-    # pickle.dump(N_new, open('n2_mem_weights', 'wb'))
+    pickle.dump(Q_mem_saved, open('q2_mem_weights', 'wb'))
+    pickle.dump(N_mem_saved, open('n2_mem_weights', 'wb'))
     # pickle.dump(N_new, open('n2_weights', 'wb'))
     # pickle.dump(Q_new, open('q2_weights', 'wb'))
 

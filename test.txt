@@ -1,0 +1,524 @@
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700   1) from typing import List, Tuple, Dict, Union
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800   2) from game_data import *
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800   3) from player import *
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800   4) import numpy as np
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800   5) from time import time
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700   6) from collections import defaultdict
+07690244 (dzamoshchin       2023-03-13 20:37:09 -0700   7) # from tqdm import trange
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700   8) import pickle
+93730f04 (dzamoshchin       2023-03-16 01:53:23 -0700   9) from copy import deepcopy
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800  10) 
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  11) 
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  12) class Simulator():
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  13)     def __init__(self, **kwargs):
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  14)         # The IDE doesn't like when I don't explicitly acknowledge these exist
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  15)         self.players: List[Player] = []
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  16)         self.roles_per_player: int = 0
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  17)         self.alive_players: List[bool] = []
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  18)         self.verbosity: int = 0
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  19)         self.middle_cards: List[Role] = []
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  20)         self.player_types: List[type] = []
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  21)         self.__dict__.update(kwargs)
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  22) 
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  23)     @classmethod
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  24)     def from_start(cls,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  25)                    player_types: List[type],
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  26)                    params: List[Dict],
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  27)                    player_roles: List[List[Role]] = None,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  28)                    coins: int = 2,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  29)                    roles_per_player: int = 2,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  30)                    verbosity: int = 0, ):
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800  31) 
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  32)         cur_turn = 0
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  33)         alive_players = [True] * len(player_types)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800  34) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800  35)         # Initialize standard deck of roles (3 of each role) and shuffle
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  36)         if player_roles is None:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800  37)             roles = [Role.AMBASSADOR, Role.ASSASSIN, Role.CAPTAIN, Role.CONTESSA, Role.DUKE] * 3
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  38)             middle_cards = [i for i in roles]
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  39)             np.random.shuffle(middle_cards)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800  40) 
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  41)             if len(player_types) * roles_per_player > len(roles):
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  42)                 raise ValueError(
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  43)                     f"There are {len(player_types)} players and {roles_per_player} roles per player but just {len(roles)} roles.")
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800  44) 
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  45)             # Initialize players and give them their roles
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  46)             players: List[Player] = []
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  47)             for idx, player_type in enumerate(player_types):
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  48)                 player_roles = [middle_cards.pop(0) for _ in range(roles_per_player)]
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  49)                 players.append(player_type(coins, player_roles, len(player_types), idx,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  50)                                            player_types, params, **params[idx]))
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  51)         else:
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  52)             players: List[Player] = []
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  53)             middle_cards = [Role.AMBASSADOR, Role.ASSASSIN, Role.CAPTAIN, Role.CONTESSA, Role.DUKE] * 3
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  54)             np.random.shuffle(middle_cards)
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  55)             for idx, player in enumerate(player_roles):
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  56)                 players.append(player_types[idx](coins, player_roles, len(player_types), idx,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  57)                                                  player_types, params, **params[idx]))
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  58)                 for role in player:
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  59)                     del middle_cards[middle_cards.index(role)]
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  60) 
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  61)         return cls(verbosity=verbosity, cur_turn=cur_turn, alive_players=alive_players,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  62)                    roles_per_player=roles_per_player, player_types=player_types, roles=player_roles,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  63)                    middle_cards=middle_cards, players=players)
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  64) 
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700  65)     def check_winner(self) -> int:
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  66)         if self.is_winner():
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  67)             winner = self.alive_players.index(True)
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  68)             if self.verbosity > 2:
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  69)                 print(f"Player {winner} wins")
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  70)             for i, player in enumerate(self.players):
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  71)                 self.players[i].game_over(won=(i == winner))
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  72)             return winner
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  73) 
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700  74)     def run_game(self, depth: int = None) -> Union[int, Tuple[int, bool], Tuple[VisibleState, bool]]:
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  75)         if depth is None:
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700  76)             for _ in range(100):
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  77)                 if self.is_winner():
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  78)                     return self.check_winner()
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  79)                 self.take_turn()
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700  80)             return 4
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  81)         else:
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  82)             for _ in range(depth):
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  83)                 if self.is_winner():
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700  84)                     return self.check_winner(), True
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  85)                 self.take_turn()
+93730f04 (dzamoshchin       2023-03-16 01:53:23 -0700  86) 
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700  87)             return self.get_visible_state(), False
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700  88) 
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700  89)     def get_visible_state(self):
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700  90)         return VisibleState([player.coins for player in self.players],
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700  91)                             [len([i for i in player.roles if i != Role.NONE]) for player in self.players])
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800  92) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800  93)     def is_winner(self):
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800  94)         return self.alive_players.count(True) == 1
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800  95) 
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700  96)     def take_turn(self, action=None):
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800  97)         # Print game state (optional)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800  98)         if self.verbosity > 2:
+2e50862a (Matt Riedman      2023-03-02 22:28:24 -0800  99)             self.print_game_state()
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 100)         # Player makes a move
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 101)         cur_player = self.players[self.cur_turn]
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 102)         legal_moves = self.get_legal_moves(cur_player)
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700 103)         if action is not None:
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 104)             move, player_against = action
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700 105)         else:
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 106)             move, player_against = cur_player.move(legal_moves)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 107)         if (move, player_against) not in legal_moves:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 108)             raise ValueError(f"Player of type {type(cur_player)} made illegal move {move} against {player_against}")
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 109) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 110)         # Other players observe the move
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 111)         obs = Observation(ObservationType.MOVE, move, self.cur_turn, player_against, None)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 112)         self.send_observation(obs)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 113) 
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 114)         player_against = (player_against + cur_player.idx) % len(self.players)
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 115) 
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 116)         # Players who assassinate pay 3 coins up front
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 117)         if move == Move.ASSASSINATE:
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 118)             if cur_player.coins < 3:
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 119)                 self.kill_player(cur_player)
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 120)                 if self.verbosity > 0:
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 121)                     print(f'Player of type {type(cur_player)} tried to assassinate with under 3 coins.')
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 122)                 return
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 123)             cur_player.coins -= 3
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 124) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 125)         # Other players can respond to the move
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 126)         success = True
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 127)         for player in self.players[self.cur_turn + 1:] + self.players[:self.cur_turn]:
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 128)             legal_responses = self.get_legal_responses(player_against == player.idx, move)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 129)             if len(legal_responses) == 1:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 130)                 break
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 131)             if not self.is_alive(player):
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 132)                 continue
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 133) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 134)             response = player.respond(legal_responses)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 135) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 136)             # Let players know
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 137)             obs = Observation(ObservationType.RESPONSE, response, player.idx, self.cur_turn)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 138)             self.send_observation(obs)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 139) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 140)             # Handle blocks and BS calls
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 141)             if response == Response.BLOCK:
+11833cdf (Matt Riedman      2023-03-17 23:16:50 -0700 142)                 if move in BLOCKABLE_MOVES or BLOCKABLE_MOVES_ALL:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 143)                     success = self.handle_block(cur_player, player, move)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 144)                     break
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 145) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 146)             elif response == Response.CALL_BS:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 147)                 if move in BS_ABLE_MOVES:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 148)                     success = self.handle_bs_call(cur_player, player, move, block=False)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 149)                     break
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 150) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 151)         # Execute the move
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 152)         if success:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 153)             self.make_move(cur_player, player_against, move)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 154) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 155)         # Advance to next player
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 156)         self.cur_turn += 1
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 157)         self.cur_turn = self.cur_turn % len(self.players)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 158)         while not self.alive_players[self.cur_turn]:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 159)             self.cur_turn += 1
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 160)             self.cur_turn = self.cur_turn % len(self.players)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 161) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 162)     def make_move(self, cur_player: Player, op_idx: int, move: Move) -> None:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 163) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 164)         if move == Move.INCOME:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 165)             cur_player.coins += 1
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 166)             return
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 167)         elif move == Move.FOREIGN_AID:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 168)             cur_player.coins += 2
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 169)             return
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 170)         elif move == Move.TAX:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 171)             cur_player.coins += 3
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 172)             return
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 173)         elif move == Move.SWAP_CARDS:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 174)             old_roles = [role for role in cur_player.roles if role != Role.NONE]
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 175)             new_roles = [self.middle_cards.pop(0) for _ in range(len(old_roles))] + \
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 176)                         [Role.NONE for _ in range(self.roles_per_player - len(old_roles))]
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 177)             cur_player.roles = new_roles
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 178)             self.middle_cards += old_roles
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 179)             return
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 180) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 181)         other_player = self.players[op_idx]
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 182) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 183)         if move == Move.ASSASSINATE:
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 184)             if self.is_alive(other_player):
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 185)                 self.lose_role(other_player)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 186)         elif move == Move.COUP:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 187)             if cur_player.coins < 7:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 188)                 self.kill_player(cur_player)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 189)                 if self.verbosity > 0:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 190)                     print(f'Player of type {type(cur_player)} tried to coup with under 7 coins.')
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 191)             else:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 192)                 self.lose_role(other_player)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 193)                 cur_player.coins -= 7
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 194)         elif move == Move.STEAL:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 195)             if other_player.coins == 0:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 196)                 self.kill_player(cur_player)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 197)                 if self.verbosity > 0:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 198)                     print(f'Player of type {type(cur_player)} tried to steal from someone with no coins.')
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 199)             else:
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 200)                 stolen_coins = min(2, other_player.coins)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 201)                 cur_player.coins += stolen_coins
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 202)                 other_player.coins -= stolen_coins
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 203) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 204)     def handle_block(self, block_against: Player, blocker: Player, move: Move) -> bool:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 205)         # Returns whether the action goes through (so True means block is UNsuccessful)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 206)         cp_idx, op_idx = block_against.idx, blocker.idx
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 207) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 208)         # Get response to block
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 209)         block_response = block_against.block_respond()
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 210) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 211)         # Let players know
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 212)         obs = Observation(ObservationType.BLOCK_RESPONSE, block_response, cp_idx, op_idx)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 213)         self.send_observation(obs)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 214) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 215)         # Handle BS call on the block
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 216)         if block_response == BlockResponse.CALL_BS:
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 217)             return not self.handle_bs_call(blocker, block_against, move, True)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 218)         return False
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 219) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 220)     def handle_bs_call(self, bs_against: Player, bs_caller: Player, move: Move, block: bool = False) -> bool:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 221)         # Return whether action goes through (so True means the player having BS called against them was telling the truth)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 222)         cp_idx, op_idx = bs_against.idx, bs_caller.idx
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 223)         proper_roles = get_proper_roles(move, block)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 224)         for i, role in enumerate(bs_against.roles):
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 225)             if role in proper_roles:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 226)                 # BS Call was unsuccessful for caller
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 227)                 # Swap the card out
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 228)                 self.middle_cards.append(role)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 229)                 bs_against.roles[i] = self.middle_cards.pop(0)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 230) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 231)                 # Let players know this
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 232)                 obs = Observation(ObservationType.SWAP_ROLE, FlipCard(role), cp_idx, cp_idx)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 233)                 self.send_observation(obs)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 234) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 235)                 # Player calling BS loses a role
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 236)                 self.lose_role(bs_caller)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 237)                 return True
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 238) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 239)         # BS Call was successful
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 240)         # BS against loses a role
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 241)         self.lose_role(bs_against)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 242)         return False
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 243) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 244)     def lose_role(self, player: Player):
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 245)         idx = player.idx
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 246)         flipped_role_idx = player.flip_role()
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 247)         flipped_role = player.roles[flipped_role_idx]
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 248)         if flipped_role == Role.NONE:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 249)             if self.verbosity > 0:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 250)                 print(f'Player of type {type(player)} tried to flip a flipped card. They are disqualified.')
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 251)                 self.kill_player(player)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 252)         player.roles[flipped_role_idx] = Role.NONE
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 253)         if all(role == Role.NONE for role in player.roles):
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 254)             self.kill_player(player)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 255) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 256)         # Notify other players
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 257)         obs = Observation(ObservationType.FLIP_ROLE, FlipCard(flipped_role), idx, idx)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 258)         self.send_observation(obs)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 259) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 260)     def is_alive(self, player: Player):
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 261)         if player not in self.players:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 262)             raise ValueError('Player not in game passed to is_alive()')
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 263)         return self.alive_players[player.idx]
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 264) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 265)     def kill_player(self, player: Player):
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 266)         if player not in self.players:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 267)             raise ValueError('Player not in game passed to kill_player()')
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 268)         self.alive_players[player.idx] = False
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 269)         if self.verbosity > 1:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 270)             print(f'Player {player.idx} has been killed')
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 271) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 272)     def get_legal_moves(self, player: Player) -> List[Tuple[Move, int]]:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 273)         cp_idx = player.idx
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 274)         alive_indices = [i for i in range(len(self.alive_players)) if i != cp_idx and self.alive_players[i]]
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 275) 
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 276)         mod_idx = lambda idx: (idx - cp_idx) % len(self.players)
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 277) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 278)         if player.coins >= 10:
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 279)             return [(Move.COUP, mod_idx(player_against)) for player_against in alive_indices]
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 280) 
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 281)         legal_moves = [(move, 0) for move in [Move.INCOME, Move.FOREIGN_AID, Move.SWAP_CARDS, Move.TAX]]
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 282)         if player.coins >= 3:
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 283)             legal_moves += [(Move.ASSASSINATE, mod_idx(player_against)) for player_against in alive_indices]
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 284)         if player.coins >= 7:
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 285)             legal_moves += [(Move.COUP, mod_idx(player_against)) for player_against in alive_indices]
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 286)         for player_against in alive_indices:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 287)             if self.players[player_against].coins > 0:
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 288)                 legal_moves.append((Move.STEAL, mod_idx(player_against)))
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 289) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 290)         return legal_moves
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 291) 
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 292)     def get_legal_responses(self, attacked: bool, move: Move):
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 293)         legal_responses = [Response.NOTHING]
+f463df7c (Matt Riedman      2023-03-02 22:44:29 -0800 294)         if move in BLOCKABLE_MOVES_ALL or (attacked and move in BLOCKABLE_MOVES):
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 295)             legal_responses.append(Response.BLOCK)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 296)         if move in BS_ABLE_MOVES:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 297)             legal_responses.append(Response.CALL_BS)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 298)         return legal_responses
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 299) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 300)     def send_observation(self, obs: Observation):
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 301)         visible_state = VisibleState(
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 302)             [player.coins for player in self.players],
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 303)             [len([i for i in player.roles if i != Role.NONE]) for player in self.players])
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 304)         obs.visible_state = visible_state
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 305)         for player in self.players:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 306)             player.get_observation(obs)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 307)         if self.verbosity > 1:
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 308)             print(obs)
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 309) 
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700 310)     def get_game_state(self):
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 311)         return {'verbosity': 0, 'cur_turn': self.cur_turn, 'alive_players': self.alive_players,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 312)                 'roles_per_player': self.roles_per_player,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 313)                 'player_types': self.player_types, 'middle_cards': self.middle_cards,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 314)                 'players': self.players}
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700 315) 
+2e50862a (Matt Riedman      2023-03-02 22:28:24 -0800 316)     def print_game_state(self):
+2e50862a (Matt Riedman      2023-03-02 22:28:24 -0800 317)         for i, player in enumerate(self.players):
+2e50862a (Matt Riedman      2023-03-02 22:28:24 -0800 318)             print(f'Player {i}: {player.coins} coins and roles {", ".join([role.name for role in player.roles])}')
+716c8d07 (dzamoshchin       2023-03-04 18:47:44 -0800 319)         print(f'Deck: {", ".join([role.name for role in self.middle_cards])}\n')
+41cd3f43 (dzamoshchin       2023-03-01 20:32:36 -0800 320) 
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 321) 
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 322) def get_utilities_from_Q(Q):
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 323)     utilities = defaultdict(float)
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 324)     for s in Q:
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 325)         if len(Q[s]) > 0:
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 326)             utilities[s] = max(Q[s].values())
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 327)     return utilities
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 328) 
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 329) 
+9e103318 (Matt Riedman      2023-03-02 21:59:38 -0800 330) if __name__ == '__main__':
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 331)     from q import QPlayer
+d94b53e3 (Matt Riedman      2023-03-19 13:47:33 -0700 332)     from qmemory import QMemoryPlayer
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700 333)     from mcts import MCTSPlayer
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 334)     from mccfr import MCCFRPlayer
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 335)     from heuristic import HeuristicPlayer, AdvancedHeuristicPlayer
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 336)     import matplotlib.pyplot as plt
+07690244 (dzamoshchin       2023-03-13 20:37:09 -0700 337) 
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 338)     Q_new = defaultdict(defaultdict(int).copy)  # action value estimates
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 339)     N_new = defaultdict(defaultdict(int).copy)  # visit counts
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 340) 
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 341)     regret_new = defaultdict(defaultdict(int).copy)  # total regrets
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 342)     strat_profile_new = defaultdict(defaultdict(int).copy)  # cumulative strategy profile
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 343) 
+11833cdf (Matt Riedman      2023-03-17 23:16:50 -0700 344)     Q_saved = pickle.load(open('q_weights', 'rb'))
+11833cdf (Matt Riedman      2023-03-17 23:16:50 -0700 345)     N_saved = pickle.load(open('n_weights', 'rb'))
+11833cdf (Matt Riedman      2023-03-17 23:16:50 -0700 346)     Q2_saved = pickle.load(open('q2_weights', 'rb'))
+11833cdf (Matt Riedman      2023-03-17 23:16:50 -0700 347)     N2_saved = pickle.load(open('n2_weights', 'rb'))
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 348)     Q_adv_saved = pickle.load(open('q_adv_weights', 'rb'))
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 349)     N_adv_saved = pickle.load(open('n_adv_weights', 'rb'))
+d94b53e3 (Matt Riedman      2023-03-19 13:47:33 -0700 350)     Q_mem_saved = pickle.load(open('q_mem_weights', 'rb'))
+d94b53e3 (Matt Riedman      2023-03-19 13:47:33 -0700 351)     N_mem_saved = pickle.load(open('n_mem_weights', 'rb'))
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 352) 
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 353)     utilities_saved = get_utilities_from_Q(Q2_saved)
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 354) 
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 355)     winners = np.array([0, 0, 0, 0, 0])
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 356)     last = np.copy(winners)
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 357)     rates = []
+d94b53e3 (Matt Riedman      2023-03-19 13:47:33 -0700 358)     for i in range(5000):
+d94b53e3 (Matt Riedman      2023-03-19 13:47:33 -0700 359)         players = np.random.choice([QPlayer, QPlayer, HumanPlayer])
+d94b53e3 (Matt Riedman      2023-03-19 13:47:33 -0700 360)         
+00000000 (Not Committed Yet 2023-03-19 14:39:35 -0700 361)         sim = Simulator.from_start([AdvancedHeuristicPlayer, AdvancedHeuristicPlayer, HumanPlayer],
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 362)                                  params=[{'Q': Q_adv_saved, 'N': N_adv_saved,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 363)                                             'c': .01,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 364)                                             'depth': 100,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 365)                                             'num_simulations': 10,
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 366)                                             'alpha': 0.1,
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 367)                                             'learn': False}]*2+
+d94b53e3 (Matt Riedman      2023-03-19 13:47:33 -0700 368)                                            [{'Q': Q_mem_saved, 'N': N_mem_saved,
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 369)                                             'c': .01,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 370)                                             'depth': 100,
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 371)                                             'num_simulations': 10,
+d94b53e3 (Matt Riedman      2023-03-19 13:47:33 -0700 372)                                             'alpha': 0.1,
+d94b53e3 (Matt Riedman      2023-03-19 13:47:33 -0700 373)                                             'learn': False}],
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 374)                                    verbosity=0)
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 375)         # sim = Simulator.from_start([QPlayer, QPlayer, QPlayer, MCCFRPlayer],
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 376)         #                          params=[{'Q': Q_saved, 'N': N_saved,
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 377)         #                                     'c': .01,
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 378)         #                                     'depth': 100,
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 379)         #                                     'num_simulations': 10,
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 380)         #                                     'alpha': 0.1,
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 381)         #                                     'learn': False}]*3 + \
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 382)         #                                    [{'utilities': utilities_saved
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 383)         #                                     'depth': 10,
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 384)         #                                     'alpha': 0.05,
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 385)         #                                     'regrets': regret_new,
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 386)         #                                     'strat_profile': strat_profile_new}] * 1,
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 387)         #                            verbosity=0)
+07690244 (dzamoshchin       2023-03-13 20:37:09 -0700 388)         winner = sim.run_game()
+07690244 (dzamoshchin       2023-03-13 20:37:09 -0700 389)         winners[winner] += 1
+11833cdf (Matt Riedman      2023-03-17 23:16:50 -0700 390)         if i % 1000 == 0:
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 391)             print(i)
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 392)             print(winners)
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 393)             print(winners - last)
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 394)             print((winners[2] / np.sum(winners)) * 100)
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 395)             print(((winners - last)[2] / np.sum(winners - last)) * 100)
+67c608cb (Matt Riedman      2023-03-18 17:34:50 -0700 396)             rates.append(((winners - last)[2] / np.sum(winners - last)) * 100)
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 397)             last = np.copy(winners)
+969b8e1f (Matt Riedman      2023-03-13 22:30:16 -0700 398)     plt.plot(rates[1:])
+113b4d4e (dzamoshchin       2023-03-15 23:54:44 -0700 399)     plt.show()
+2e9a02be (Matt Riedman      2023-03-16 23:57:19 -0700 400)     print()
+d94b53e3 (Matt Riedman      2023-03-19 13:47:33 -0700 401)     # pickle.dump(Q_new, open('q2_mem_weights', 'wb'))
+d94b53e3 (Matt Riedman      2023-03-19 13:47:33 -0700 402)     # pickle.dump(N_new, open('n2_mem_weights', 'wb'))
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 403)     # pickle.dump(N_new, open('n2_weights', 'wb'))
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 404)     # pickle.dump(Q_new, open('q2_weights', 'wb'))
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 405) 
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 406)     # for i in range(500):
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 407)     #     # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, HeuristicPlayer], params=[{}, {}, {}, {}], verbosity=0)
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 408)     #     sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, MCTSPlayer],
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 409)     #                                params=[{}, {}, {},
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 410)     #                                        {'Q': Q, 'N': N,
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 411)     #                                         'c': .01,
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 412)     #                                         'depth': 5,
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 413)     #                                         'num_simulations': 10,
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 414)     #                                         'alpha': 0.1}],
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 415)     #                                verbosity=0)
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 416)     #     # sim = Simulator.from_start([RandomPlayer, RandomPlayer, RandomPlayer, QPlayer], params=[{}, {}, {}, {'Q':Q, 'N':N, 'c':.01, 'alpha':0.1}], verbosity=0)
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 417)     #     winner = sim.run_game()
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 418)     #     winners[winner] += 1
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 419)     #     if i % 20 == 0:
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 420)     #         print(i)
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 421)     #         print(winners)
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 422)     #         print(winners - last)
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 423)     #         print((winners[3] / np.sum(winners)) * 100)
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 424)     #         print(((winners - last)[3] / np.sum(winners - last)) * 100)
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 425)     #         rates.append(((winners - last)[3] / np.sum(winners - last)) * 100)
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 426)     #         last = np.copy(winners)
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 427)     # plt.plot(rates[1:])
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 428)     # plt.show()
+5d40ca1a (dzamoshchin       2023-03-17 21:03:07 -0700 429)     # print()
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700  1) from typing import List, Tuple, Dict
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700  2) from game_data import *
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700  3) import numpy as np
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700  4) from player import Player
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700  5) from copy import deepcopy
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700  6) 
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700  7) 
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700  8) class QPlayer(Player):
+2e9a02be (Matt Riedman 2023-03-16 23:57:19 -0700  9)     def __init__(self,
+2e9a02be (Matt Riedman 2023-03-16 23:57:19 -0700 10)                  coins: int,
+2e9a02be (Matt Riedman 2023-03-16 23:57:19 -0700 11)                  roles: List[Role],
+2e9a02be (Matt Riedman 2023-03-16 23:57:19 -0700 12)                  num_players: int,
+2e9a02be (Matt Riedman 2023-03-16 23:57:19 -0700 13)                  idx: int,
+2e9a02be (Matt Riedman 2023-03-16 23:57:19 -0700 14)                  all_player_types: List[type],
+2e9a02be (Matt Riedman 2023-03-16 23:57:19 -0700 15)                  all_params: List[Dict],
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 16)                  Q: Dict, N: Dict, c: int, alpha: float = 0.01, learn: bool = True, **kwargs):
+2e9a02be (Matt Riedman 2023-03-16 23:57:19 -0700 17)         super().__init__(coins, roles, num_players, idx, all_player_types, all_params)
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 18) 
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 19)         self.c = c  # exploration constant
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 20)         self.alpha = alpha  # learning rate
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 21) 
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 22)         self.Q = Q
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 23)         self.N = N
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 24) 
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 25)         self.cur_game_state = [1 for _ in range(num_players)] + [len(roles) for _ in range(num_players)] + sorted(roles)
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 26)         self.past_ha = []
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 27) 
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 28)         self.learn = learn
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 29)         self.last_action = None
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 30) 
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 31)         def __deepcopy__(self, memo=None):
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 32)             return self(self.coins, deepcopy(self.roles),
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 33)                           self.num_players,
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 34)                           self.idx,
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 35)                           self.all_player_types,
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 36)                           self.all_params,
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 37)                           self.Q,
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 38)                           self.N, self.c, self.depth, self.num_simulations, self.alpha)
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 39) 
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 40)     def UCB1(self, s, a):
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 41)         if self.N[s][a] == 0:
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 42)             return 1e4
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 43)         return self.Q[s][a] + self.c * np.sqrt(np.log(sum(self.N[s][ap] for ap in self.N[s])) / (1e-4 + self.N[s][a]))
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 44) 
+2e9a02be (Matt Riedman 2023-03-16 23:57:19 -0700 45)     def move(self, legal_moves: List[Tuple[Move, int]]) -> Tuple[Move, int]:
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 46)         history = tuple(self.cur_game_state) + (0,)
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 47)         a = max(legal_moves, key=lambda a: self.UCB1(history, a))
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 48)         if self.learn:
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 49)             self.past_ha.append([history, a])
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 50)             self.N[history][a] += 1
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 51)         return a
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 52) 
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 53)     def respond(self, legal_responses: List[Response]) -> Response:
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 54)         history = tuple(self.cur_game_state) + (1, self.last_action)
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 55)         a = max(legal_responses, key=lambda a: self.UCB1(history, a))
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 56)         if self.learn:
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 57)             self.past_ha.append([history, a])
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 58)             self.N[history][a] += 1
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 59)         return a
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 60) 
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 61)     def block_respond(self) -> BlockResponse:
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 62)         history = tuple(self.cur_game_state) + (2, self.last_action)
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 63)         a = max([BlockResponse.NOTHING, BlockResponse.CALL_BS], key=lambda a: self.UCB1(history, a))
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 64)         if self.learn:
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 65)             self.past_ha.append([history, a])
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 66)             self.N[history][a] += 1
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 67)         return a
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 68) 
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 69)     def get_observation(self, obs: Observation) -> None:
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 70)         def coin_bucket(c):
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 71)             # if c < 3:
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 72)             #     return 0
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 73)             if c < 7:
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 74)                 return 1
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 75)             # if c < 10:
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 76)             #     return 2
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 77)             return 3
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 78)         
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 79)         start_on_idx = lambda l: l[self.idx:] + l[:self.idx]
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 80) 
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 81)         self.cur_game_state = start_on_idx([coin_bucket(c) for c in obs.visible_state.coin_list]) + \
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 82)                               start_on_idx([num_roles for num_roles in obs.visible_state.num_roles_list]) + \
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 83)                               sorted(self.roles)
+5d40ca1a (dzamoshchin  2023-03-17 21:03:07 -0700 84)         self.last_action = (obs.obs_type, obs.obs)
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 85) 
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 86)     def flip_role(self) -> int:
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 87)         return np.random.choice([i for i in range(len(self.roles)) if self.roles[i] != Role.NONE])
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 88) 
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 89)     def game_over(self, won) -> None:
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 90)         if won:
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 91)             for history, action in self.past_ha:
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 92)                 self.Q[history][action] = (1-self.alpha) * self.Q[history][action] + self.alpha
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 93)         else:
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 94)             for history, action in self.past_ha:
+969b8e1f (Matt Riedman 2023-03-13 22:30:16 -0700 95)                 self.Q[history][action] = (1-self.alpha) * self.Q[history][action] - self.alpha
