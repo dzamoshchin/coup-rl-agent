@@ -341,14 +341,14 @@ if __name__ == '__main__':
     regret_new = defaultdict(defaultdict(int).copy)  # total regrets
     strat_profile_new = defaultdict(defaultdict(int).copy)  # cumulative strategy profile
 
-    Q_saved = pickle.load(open('q_weights', 'rb'))
-    N_saved = pickle.load(open('n_weights', 'rb'))
-    Q2_saved = pickle.load(open('q2_weights', 'rb'))
-    N2_saved = pickle.load(open('n2_weights', 'rb'))
-    Q_adv_saved = pickle.load(open('q_adv_weights', 'rb'))
-    N_adv_saved = pickle.load(open('n_adv_weights', 'rb'))
-    Q_mem_saved = pickle.load(open('q_mem_weights', 'rb'))
-    N_mem_saved = pickle.load(open('n_mem_weights', 'rb'))
+    Q_saved = pickle.load(open('weights/q_weights', 'rb'))
+    N_saved = pickle.load(open('weights/n_weights', 'rb'))
+    Q2_saved = pickle.load(open('weights/q2_weights', 'rb'))
+    N2_saved = pickle.load(open('weights/n2_weights', 'rb'))
+    Q_adv_saved = pickle.load(open('weights/q_adv_weights', 'rb'))
+    N_adv_saved = pickle.load(open('weights/n_adv_weights', 'rb'))
+    Q_mem_saved = pickle.load(open('weights/q_mem_weights', 'rb'))
+    N_mem_saved = pickle.load(open('weights/n_mem_weights', 'rb'))
 
     utilities_saved = get_utilities_from_Q(Q2_saved)
 
